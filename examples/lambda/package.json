@@ -1,0 +1,14 @@
+{
+  "dependencies": {
+    "@cdktf/provider-aws": "^19.34.0",
+    "@cdktf/provider-random": "^11.0.3",
+    "aws-cdk": "^2.160.0",
+    "aws-cdk-lib": "^2.160.0",
+    "cdktf": "^0.20.9",
+    "cdktf-in-aws-cdk": "file:../../cdktf-in-aws-cdk-0.1.2.tgz",
+    "constructs": "^10.3.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.1"
+  }
+}

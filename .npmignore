@@ -1,0 +1,4 @@
+*.tgz
+.github
+node_modules
+examples

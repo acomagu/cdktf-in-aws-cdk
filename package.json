@@ -1,0 +1,29 @@
+{
+  "name": "cdktf-in-aws-cdk",
+  "version": "0.1.2",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "aws-cdk-lib": "^2.160.0",
+    "cdktf": "^0.20.9",
+    "constructs": "^10.0.5"
+  },
+  "dependencies": { },
+  "devDependencies": {
+    "@aws-sdk/client-s3": "^3.658.0",
+    "@types/aws-lambda": "^8.10.145",
+    "@types/node": "^22.7.0",
+    "@types/unzipper": "^0.10.10",
+    "aws-cdk-lib": "^2.160.0",
+    "cdktf": "^0.20.9",
+    "constructs": "^10.3.0",
+    "esbuild": "^0.24.0",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2",
+    "unzipper": "^0.12.3"
+  }
+}
