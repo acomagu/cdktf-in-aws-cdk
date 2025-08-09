@@ -32,7 +32,10 @@ export class TerraformStackAdapter extends cdk.Resource {
     });
     this.deployerRole = handler.role!;
 
-    const tfStateBucket = new s3.Bucket(this, 'TFStateBucket');
+    const tfStateBucket = new s3.Bucket(this, 'TFStateBucket', {
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+    tfStateBucket.grantReadWrite(handler);
 
     cdk.attachCustomSynthesis(this, {
       onSynthesize: () => {
@@ -91,6 +94,9 @@ export class TerraformStackAdapter extends cdk.Resource {
             }
           }
 
+          try {
+            fs.mkdirSync(`${this.app.outdir}/stacks/${tfStack.node.id}/assets`);
+          } catch { }
           const tfStackAssets = new s3Assets.Asset(this, 'TFCDKAssemblyAsset', {
             path: `${this.app.outdir}/stacks/${tfStack.node.id}/assets`,
           });

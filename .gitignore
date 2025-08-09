@@ -1,3 +1,5 @@
 node_modules
 cdk.out
 cdktf.out
+dist
+*.tgz

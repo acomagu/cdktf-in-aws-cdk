@@ -77,67 +77,48 @@ const s3Client = new s3.S3({});
 export async function handler(ev: OnEventRequest): Promise<OnEventResponse> {
   console.log(ev.ResourceProperties);
 
+  const dir = fs.mkdtempSync('/tmp/deploy');
+
+  const stackAssetsFile = await unzipper.Open.s3_v3(s3Client, {
+    Bucket: ev.ResourceProperties.TFStackAssetsBucketName,
+    Key: ev.ResourceProperties.TFStackAssetsObjectKey,
+  });
+  await stackAssetsFile.extract({
+    path: path.join(dir, 'assets'),
+  });
+
   try {
-    const dir = fs.mkdtempSync('/tmp/deploy');
+    fs.writeFileSync(path.join(dir, 'terraform.tfvars.json'), JSON.stringify(ev.ResourceProperties.Variables));
+    fs.writeFileSync(path.join(dir, 'main.tf.json'), JSON.stringify(ev.ResourceProperties.Terraform));
 
-    const stackAssetsFile = await unzipper.Open.s3_v3(s3Client, {
-      Bucket: ev.ResourceProperties.TFStackAssetsBucketName,
-      Key: ev.ResourceProperties.TFStackAssetsObjectKey,
-    });
-    await stackAssetsFile.extract({
-      path: path.join(dir, 'assets'),
-    });
+    switch (ev.RequestType) {
+      case 'Create':
+      case 'Update':
+        await exec(path.join(import.meta.dirname, './terraform'), [
+          'init',
+          '--input=false',
+          `--backend-config=bucket=${ev.ResourceProperties.S3BackendBucket}`,
+          `--backend-config=region=${ev.ResourceProperties.S3BackendBucketRegion}`,
+          '--backend-config=key=tfstate',
+        ], { cwd: dir });
 
-    try {
-      fs.writeFileSync(path.join(dir, 'terraform.tfvars.json'), JSON.stringify(ev.ResourceProperties.Variables));
-      fs.writeFileSync(path.join(dir, 'main.tf.json'), JSON.stringify(ev.ResourceProperties.Terraform));
-
-      switch (ev.RequestType) {
-        case 'Create':
-        case 'Update':
+        try {
           await exec(path.join(import.meta.dirname, './terraform'), [
-            'init',
+            'apply',
+            '--auto-approve',
             '--input=false',
-            `--backend-config=bucket=${ev.ResourceProperties.S3BackendBucket}`,
-            `--backend-config=region=${ev.ResourceProperties.S3BackendBucketRegion}`,
-            '--backend-config=key=tfstate',
           ], { cwd: dir });
 
-          try {
-            await exec(path.join(import.meta.dirname, './terraform'), [
-              'apply',
-              '--auto-approve',
-              '--input=false',
-            ], { cwd: dir });
-
-            const { stdout: terraformOutputJson } = await exec(path.join(import.meta.dirname, './terraform'), [
-              'output',
-              '--json',
-            ], { cwd: dir });
-            const terraformOutput = JSON.parse(terraformOutputJson);
-
-            return {
-              Data: Object.fromEntries(Object.entries(terraformOutput).map(([outputName, { value }]: any) => [outputName, value])),
-            };
-          } catch (e) {
-            await exec(path.join(import.meta.dirname, './terraform'), [
-              'apply',
-              '--destroy',
-              '--auto-approve',
-              '--input=false',
-            ], { cwd: dir });
-
-            throw e;
-          }
-        case 'Delete':
-          await exec(path.join(import.meta.dirname, './terraform'), [
-            'init',
-            '--input=false',
-            `--backend-config=bucket=${ev.ResourceProperties.S3BackendBucket}`,
-            `--backend-config=region=${ev.ResourceProperties.S3BackendBucketRegion}`,
-            '--backend-config=key=tfstate',
+          const { stdout: terraformOutputJson } = await exec(path.join(import.meta.dirname, './terraform'), [
+            'output',
+            '--json',
           ], { cwd: dir });
+          const terraformOutput = JSON.parse(terraformOutputJson);
 
+          return {
+            Data: Object.fromEntries(Object.entries(terraformOutput).map(([outputName, { value }]: any) => [outputName, value])),
+          };
+        } catch (e) {
           await exec(path.join(import.meta.dirname, './terraform'), [
             'apply',
             '--destroy',
@@ -145,25 +126,34 @@ export async function handler(ev: OnEventRequest): Promise<OnEventResponse> {
             '--input=false',
           ], { cwd: dir });
 
-          break;
-      }
-    } finally {
-      console.log('Cleaning up...');
-      fs.rmSync(dir, { recursive: true });
+          throw e;
+        }
+      case 'Delete':
+        await exec(path.join(import.meta.dirname, './terraform'), [
+          'init',
+          '--input=false',
+          `--backend-config=bucket=${ev.ResourceProperties.S3BackendBucket}`,
+          `--backend-config=region=${ev.ResourceProperties.S3BackendBucketRegion}`,
+          '--backend-config=key=tfstate',
+        ], { cwd: dir });
+
+        await exec(path.join(import.meta.dirname, './terraform'), [
+          'apply',
+          '--destroy',
+          '--auto-approve',
+          '--input=false',
+        ], { cwd: dir });
+
+        break;
     }
-
-    console.log('Successfully finished.');
-
-    return {};
-  } catch (e: any) {
-    console.log(e);
-    return {
-      Error: e?.message ?? e?.toString?.() ?? e,
-      Stack: (e as Error).stack,
-      Detail: JSON.stringify(e),
-      CommandOutput: e.out,
-    };
+  } finally {
+    console.log('Cleaning up...');
+    fs.rmSync(dir, { recursive: true });
   }
+
+  console.log('Successfully finished.');
+
+  return {};
 }
 
 function exec(command: string, args: string[], options?: childProcess.SpawnOptionsWithoutStdio) {
@@ -192,12 +182,21 @@ function exec(command: string, args: string[], options?: childProcess.SpawnOptio
     child.on('close', (code) => {
       if (code === 0) resolve({ stdout, stderr, out });
       else {
-        const e = new class extends Error {
-          constructor(msg: string, readonly out: string) {
-            super(msg);
-          }
-        }(`Process exited with code ${code}.`, out);
-        reject(e);
+        let errmsg = `'${command}' exited with code ${code}. stderr:\n${stderr}`;
+        errmsg = errmsg.replace(/[\x00-\x1F\x7F-\x9F]/g, '');
+        console.log('LENGTH:', errmsg.length);
+        // 4000字以前は切り取る
+        const off = errmsg.length - 3000;
+        if (off > 0) {
+          errmsg = errmsg.slice(off);
+        }
+
+        // const e = new class extends Error {
+        //   constructor(msg: string, readonly stdout: string, readonly stderr: string, readonly out: string) {
+        //     super(msg);
+        //   }
+        // }(errmsg, stdout, stderr, out);
+        reject(errmsg);
       }
     });
   });
