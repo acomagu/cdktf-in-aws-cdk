@@ -8,9 +8,20 @@ This library provides a tiny adapter that lets you mount a `cdktf.TerraformStack
 
 ## Why?
 
-* You like AWS CDK’s app/project structure but want to use **providers that CDK doesn’t have** (e.g., Google, Cloudflare, Datadog) or Terraform-only resources.
-* You want a **single place to orchestrate** infra (construct tree, parameters, CI) while selectively authoring parts with CDKTF.
-* You need to **pass parameters across** (CDK → CDKTF, and CDKTF → CDK).
+* You love AWS CDK’s app/project structure but need **providers or resources only available via Terraform** (e.g., Google, Cloudflare, Datadog).
+* You already have AWS CDK resources in production and **you want not to migrate from CloudFormation.**
+* You must **pass values both directions** (CDK → CDKTF or CDKTF → CDK).
+* Unlike `@cdktf/aws-cdk`, which runs everything through Terraform, `cdktf-in-aws-cdk` lets the **AWS CDK parts deploy via CloudFormation as usual** — only the Terraform stack deploys via Terraform. That means **no migration or rewriting of existing CDK code**: you just augment it with Terraform where needed.
+---
+
+## Comparison with [`@cdktf/aws-cdk` (AWS Adapter for CDKTF)](https://developer.hashicorp.com/terraform/cdktf/create-and-deploy/aws-adapter)
+
+| Feature                       | `cdktf-in-aws-cdk` (this repository)          | `@cdktf/aws-cdk`                                                           |
+| ----------------------------- | --------------------------------------------- | -------------------------------------------------------------------------- |
+| Deployment engine for AWS CDK | AWS CDK uses CloudFormation (as originally)   | Full Terraform execution—AWS CDK constructs get synthesized into Terraform |
+| Reusing existing CDK stacks   | No migration needed—CloudFormation remains    | Requires migrating to Terraform (risky if migrating live resources)        |
+| Terraform usage               | Only the CDKTF portion goes through Terraform | Entire stack—including former CDK bits—runs via Terraform                  |
+| Migration safety              | **Safer—nothing to do!**                      | Risky—need to migrate from CloudFormation to Terraform                     |
 
 ---
 
@@ -93,8 +104,8 @@ What’s happening?
 
 ### 2) Pass values between CDK and CDKTF
 
-* **CDK → CDKTF**: Convert CDK tokens (like `CfnParameter`) into concrete strings CDKTF can use.
-* **CDKTF → CDK**: Publish CDKTF-computed strings back to CDK (e.g., show an endpoint as a `CfnOutput`).
+* **CDK → CDKTF**: Convert CDK tokens (like `${TOKEN:0}`) into CDKTF tokens (like `${TFTOKEN:0}`).
+* **CDKTF → CDK**: Vice versa.
 
 ```ts
 import * as aws from '@cdktf/provider-aws';
@@ -219,9 +230,9 @@ Mounts a CDKTF app inside your CDK stack.
 
 ### `tokenStringFromAwsToTerraform(value: string): string`
 
-Converts a CDK token/string (which may resolve lazily) into a **concrete string** that CDKTF can safely consume at synth/apply time.
+Converts a CDK token/string into a CDKTF token.
 
-Typical use: CDK `CfnParameter` → CDKTF resource argument.
+Typical use: pass API Gateway URL to Cloudflare.
 
 ### `tokenStringFromTerraformToAws(value: string): string`
 
@@ -229,7 +240,8 @@ Converts a **CDKTF-produced string** back into something CDK can wire into outpu
 
 Typical use: surface a CDKTF-generated endpoint/ARN as a `CfnOutput`.
 
-> These helpers are intentionally narrow: they focus on string values. If you need richer data, emit/parse JSON strings.
+> **Note:** Currently, only string value helpers are implemented.
+> Support for other data types (numbers, lists, maps, etc.) is planned but not yet available.
 
 ---
 
@@ -248,7 +260,7 @@ Typical use: surface a CDKTF-generated endpoint/ARN as a `CfnOutput`.
   For simple values, just keep them as `public` properties on your CDKTF stack and convert them back with `tokenStringFromTerraformToAws` to export via `CfnOutput`.
 
 * **Ordering**
-  Because everything lives in the **same construct tree**, CDK/CMake-style synthesis ordering generally “just works.” If you have cross-dependencies (e.g., CDKTF needs an ARN created by CDK), pass it in through the constructor using the token converters.
+  Because everything lives in the **same construct tree**, CDK-style synthesis ordering generally “just works.” If you have cross-dependencies (e.g., CDKTF needs an ARN created by CDK), pass it in through the constructor using the token converters.
 
 ---
 
@@ -259,9 +271,6 @@ Typical use: surface a CDKTF-generated endpoint/ARN as a `CfnOutput`.
 
 * **“Provider can’t find credentials.”**
   CDKTF still uses provider-native auth. Make sure your environment variables/credentials are available during `cdk synth/deploy`.
-
-* **“I need non-string data.”**
-  Serialize as JSON on the CDKTF side and parse on the CDK side (or vice versa). The included helpers are string-focused by design.
 
 ---
 
