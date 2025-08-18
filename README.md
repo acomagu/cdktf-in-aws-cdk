@@ -270,7 +270,7 @@ Typical use: surface a CDKTF-generated endpoint/ARN as a `CfnOutput`.
   Ensure you’re using `tokenStringFromTerraformToAws(...)` when wiring CDKTF properties back into CDK.
 
 * **“Provider can’t find credentials.”**
-  CDKTF still uses provider-native auth. Make sure your environment variables/credentials are available during `cdk synth/deploy`.
+  CDKTF still uses provider-native auth. Since Terraform deployment happens inside a Lambda function, you must configure credentials properly in your provider configuration (e.g., in `AwsProvider` parameters) rather than relying on environment variables during synth.
 
 ---
 
