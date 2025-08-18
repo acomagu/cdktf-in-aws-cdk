@@ -3,3 +3,4 @@ cdk.out
 cdktf.out
 dist
 *.tgz
+package-lock.json
